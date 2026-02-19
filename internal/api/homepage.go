@@ -1,10 +1,11 @@
 package api
 
 import (
-	"chefpaws-logic/internal/models"
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/luisgaviria/chefpaws-logic/internal/models"
 )
 
 // FetchHomepageData grabs the landing page and flattens all nested paragraphs
