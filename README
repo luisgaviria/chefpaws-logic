@@ -1,0 +1,24 @@
+# chefpaws-logic
+
+Core metabolic engine for ChefPaws nutrition protocols. Standardizes energy requirements and recipe formulations across the stack.
+
+## Technical Specs
+
+### Metabolic Formula
+
+The engine calculates Daily Energy Requirement (DER) using the exponentiated Resting Energy Requirement (RER):
+
+- **RER:** $70 \times (BW_{kg})^{0.75}$
+- **DER:** $RER \times ActivityMultiplier$
+
+### Activity Coefficients
+
+- **1.2:** Sedentary / Neutered
+- **1.4:** Active / Intact
+- **1.6:** Performance / Working
+
+## Integration
+
+### Go Backend
+
+The logic is exposed as a Go module for server-side validation and lead processing.

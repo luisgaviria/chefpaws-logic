@@ -11,4 +11,5 @@ type CalculationResult struct {
     DailyCalories float64 `json:"daily_calories"`
     GramsPerMeal  float64 `json:"grams_per_meal"`
     RecipeName    string  `json:"recipe_name"`
+		Ingredients   string  `json:"ingredients"`
 }

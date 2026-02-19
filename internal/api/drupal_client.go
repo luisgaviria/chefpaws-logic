@@ -1,11 +1,12 @@
 package api
 
 import (
-	"chefpaws-logic/internal/models"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+
+	"github.com/luisgaviria/chefpaws-logic/internal/models"
 )
 
 type drupalRecipeDTO struct {
