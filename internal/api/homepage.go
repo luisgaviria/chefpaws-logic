@@ -62,7 +62,7 @@ func FetchHomepageData(baseURL string) (models.HomepageResponse, error) {
               if fileEntity, found := includedMap[mediaID]; found {
                 fileAttrs := fileEntity["attributes"].(map[string]interface{})
                 if uri, ok := fileAttrs["uri"].(map[string]interface{}); ok {
-                  // Prepend the full DDEV URL for local development
+                  
                   attrs["field_media"] = "http://chefpaws-backend.ddev.site" + uri["url"].(string)
                 }
               }
