@@ -62,8 +62,7 @@ func FetchHomepageData(baseURL string) (models.HomepageResponse, error) {
               if fileEntity, found := includedMap[mediaID]; found {
                 fileAttrs := fileEntity["attributes"].(map[string]interface{})
                 if uri, ok := fileAttrs["uri"].(map[string]interface{}); ok {
-                  
-                  attrs["field_media"] = "http://chefpaws-backend.ddev.site" + uri["url"].(string)
+                  attrs["field_media"] = baseURL + uri["url"].(string)
                 }
               }
             }
