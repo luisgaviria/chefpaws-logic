@@ -11,20 +11,36 @@ import (
 )
 
 // FetchPageData grabs a specific landing page and flattens all nested paragraphs.
-// Optimized for Drupal 11 on Heroku/Railway.
+// Optimized for Drupal 11 on Heroku/Railway and local DDEV.
 func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error) {
-	// 1. Corrected Include Params: field_cta_link -> field_cta_button
-	includeParams := "field_sections,field_sections.field_feature_items,field_sections.field_media,field_sections.field_trust_items,field_sections.field_trust_items.field_icon,field_sections.field_teardown_image,field_sections.field_hotspot,field_sections.field_comp_items,field_sections.field_cta_button"
+	// 1. CORRECTED INCLUDE PARAMS: 
+	// Removed field_sections.field_cta_button because it is a Link field, not a relationship.
+	includeParams := "field_sections,field_sections.field_feature_items,field_sections.field_media,field_sections.field_trust_items,field_sections.field_trust_items.field_icon,field_sections.field_teardown_image,field_sections.field_hotspot,field_sections.field_comp_items"
 
 	var url string
-	// 2. UUID-based fetching for the homepage to bypass the "path not found" 500 error
+	
+	// 2. DYNAMIC ROUTING LOGIC (No Hard-coded IDs)
 	if slug == "/" || slug == "" || slug == "home" {
-		homepageUUID := "b1bef2d6-079e-4d45-bd3c-9cf7cb6503a1"
-		url = fmt.Sprintf("%s/jsonapi/node/landing_page/%s?include=%s", baseURL, homepageUUID, includeParams)
+		homepageUUID := os.Getenv("HOMEPAGE_UUID")
+		homepageNID := os.Getenv("HOMEPAGE_NID")
+
+		if homepageUUID != "" {
+			// Best for Production: Fetch by Direct UUID
+			url = fmt.Sprintf("%s/jsonapi/node/landing_page/%s?include=%s", baseURL, homepageUUID, includeParams)
+		} else if homepageNID != "" {
+			// Best for Local: Fetch by Internal NID
+			url = fmt.Sprintf("%s/jsonapi/node/landing_page?filter[drupal_internal__nid]=%s&include=%s", baseURL, homepageNID, includeParams)
+		} else {
+			// Safety Fallback: Use slug filter if no IDs are provided in env
+			url = fmt.Sprintf("%s/jsonapi/node/landing_page?filter[path.alias]=/&include=%s", baseURL, includeParams)
+		}
 	} else {
-		// Fallback for other slugs using internal NID to remain robust
-		url = fmt.Sprintf("%s/jsonapi/node/landing_page?filter[drupal_internal__nid]=9&include=%s", baseURL, includeParams)
+		// Standard filter for all other library pages
+		url = fmt.Sprintf("%s/jsonapi/node/landing_page?filter[path.alias]=%s&include=%s", baseURL, slug, includeParams)
 	}
+
+	// DEBUG LOG: Monitor the exact request in your terminal
+	fmt.Printf("🔍 DEBUG: Fetching from Drupal: %s\n", url)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -37,7 +53,7 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 		return models.HomepageResponse{}, err
 	}
 
-	// 3. Handle both Single Object (Direct UUID fetch) and Array (Filter fetch)
+	// 3. DATA EXTRACTION
 	var firstNode map[string]interface{}
 	data := raw["data"]
 
@@ -46,11 +62,11 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 	} else if nodeList, ok := data.([]interface{}); ok && len(nodeList) > 0 {
 		firstNode = nodeList[0].(map[string]interface{})
 	} else {
-		// Low maintenance fallback if everything is empty
+		// Return fallback if Drupal returns no data (e.g., node is unpublished)
 		return models.HomepageResponse{Title: "ChefPaws", Sections: []models.Section{}}, nil
 	}
 
-	// 4. Map 'included' data for fast lookup
+	// 4. LOOKUP MAP (Flattened 'included' data for fast access)
 	includedMap := make(map[string]map[string]interface{})
 	if included, ok := raw["included"].([]interface{}); ok {
 		for _, item := range included {
@@ -67,6 +83,7 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 		return models.HomepageResponse{Title: fmt.Sprint(nodeAttrs["title"])}, nil
 	}
 
+	// 5. COMPONENT MAPPING
 	var finalSections []models.Section
 	for _, link := range sectionLinks {
 		id := link.(map[string]interface{})["id"].(string)
@@ -76,7 +93,7 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 			sectionType := details["type"].(string)
 			rels, hasRels := details["relationships"].(map[string]interface{})
 
-			// --- HERO ---
+			// HERO
 			if sectionType == "paragraph--hero" && hasRels {
 				if mediaRel, ok := rels["field_media"].(map[string]interface{}); ok && mediaRel["data"] != nil {
 					mediaData := mediaRel["data"].(map[string]interface{})
@@ -88,7 +105,7 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 				}
 			}
 
-			// --- FEATURES GRID ---
+			// FEATURES GRID
 			if sectionType == "paragraph--features_grid" && hasRels {
 				if itemsRel, ok := rels["field_feature_items"].(map[string]interface{}); ok && itemsRel["data"] != nil {
 					itemLinks := itemsRel["data"].([]interface{})
@@ -103,7 +120,7 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 				}
 			}
 
-			// --- TRUST BAR ---
+			// TRUST BAR
 			if sectionType == "paragraph--trust_bar" && hasRels {
 				if itemsRel, ok := rels["field_trust_items"].(map[string]interface{}); ok && itemsRel["data"] != nil {
 					itemLinks := itemsRel["data"].([]interface{})
@@ -129,7 +146,7 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 				}
 			}
 
-			// --- VISUAL TEARDOWN ---
+			// VISUAL TEARDOWN
 			if sectionType == "paragraph--visual_teardown" && hasRels {
 				if imgRel, ok := rels["field_teardown_image"].(map[string]interface{}); ok && imgRel["data"] != nil {
 					imgData := imgRel["data"].(map[string]interface{})
@@ -152,7 +169,7 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 				}
 			}
 
-			// --- COMPARISON TABLE ---
+			// COMPARISON TABLE
 			if sectionType == "paragraph--comparison_table" && hasRels {
 				if itemsRel, ok := rels["field_comp_items"].(map[string]interface{}); ok && itemsRel["data"] != nil {
 					itemLinks := itemsRel["data"].([]interface{})
@@ -167,9 +184,8 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 				}
 			}
 
-			// --- FINAL CTA (Corrected type: paragraph--cta) ---
+			// FINAL CTA (Maps Title and URL from the Link field)
 			if sectionType == "paragraph--cta" {
-				// Handle the Button Field (Corrected: field_cta_button)
 				if btnField, ok := attrs["field_cta_button"].(map[string]interface{}); ok {
 					attrs["button_text"] = btnField["title"]
 					uri := btnField["uri"].(string)
@@ -190,7 +206,6 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 	}, nil
 }
 
-// resolveS3URL ensures media paths work across DDEV, Railway, and Heroku.
 func resolveS3URL(baseURL string, rawURL string) string {
 	var finalURL string
 	if len(rawURL) > 4 && rawURL[:4] == "http" {
