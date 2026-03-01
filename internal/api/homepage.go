@@ -208,15 +208,20 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 
 func resolveS3URL(baseURL string, rawURL string) string {
 	var finalURL string
-	if len(rawURL) > 4 && rawURL[:4] == "http" {
-			finalURL = rawURL
-	} else {
-			finalURL = baseURL + rawURL
-	}
 	
-	// Always ensure /s3fs-public/ is present if it's an R2 URL
-	if strings.Contains(finalURL, ".r2.dev/") && !strings.Contains(finalURL, "/s3fs-public/") {
-			finalURL = strings.Replace(finalURL, ".r2.dev/", ".r2.dev/s3fs-public/", 1)
+	// 1. If it's a relative path (/sites/...), attach the Drupal base URL.
+	// This keeps your local DDEV images working perfectly.
+	if !strings.HasPrefix(rawURL, "http") {
+		finalURL = baseURL + rawURL
+	} else {
+		finalURL = rawURL
 	}
+
+	// 2. If it's a Production R2 URL, we MUST ensure /s3fs-public/ is in the path.
+	// This fixes the 404s you see on the live site.
+	if strings.Contains(finalURL, ".r2.dev/") && !strings.Contains(finalURL, "/s3fs-public/") {
+		finalURL = strings.Replace(finalURL, ".r2.dev/", ".r2.dev/s3fs-public/", 1)
+	}
+
 	return finalURL
 }
