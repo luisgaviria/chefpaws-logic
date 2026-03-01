@@ -6,15 +6,14 @@ import (
 	"log"
 	"math"
 	"net/http"
-	"os" // Added to handle environment variables
+	"os"
 
-	"github.com/luisgaviria/chefpaws-logic/calculations" // Fixed: Points to new public folder
+	"github.com/luisgaviria/chefpaws-logic/calculations"
 	"github.com/luisgaviria/chefpaws-logic/internal/api"
 	"github.com/luisgaviria/chefpaws-logic/internal/models"
 )
 
 func main() {
-	// 1. Dynamic Base URL: Uses Railway URL if available, otherwise defaults to DDEV
 	baseURL := os.Getenv("DRUPAL_URL")
 	if baseURL == "" {
 		baseURL = "http://chefpaws-backend.ddev.site"
@@ -25,12 +24,18 @@ func main() {
 		port = "8080"
 	}
 
-	// 1. Homepage Endpoint
-	http.HandleFunc("/homepage", func(w http.ResponseWriter, r *http.Request) {
+	// CHANGED: Now handles any landing page via a "slug" query parameter
+	// Example: /page?slug=/home or /page?slug=/our-story
+	http.HandleFunc("/page", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
 
-		data, err := api.FetchHomepageData(baseURL)
+		slug := r.URL.Query().Get("slug")
+		if slug == "" {
+			slug = "/home" // Fallback default
+		}
+
+		data, err := api.FetchPageData(baseURL, slug)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -38,13 +43,12 @@ func main() {
 		json.NewEncoder(w).Encode(data)
 	})
 
-	// 2. Meal Plan Endpoint
+	// Meal Plan Endpoint (Unchanged)
 	http.HandleFunc("/meal-plan", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
 
 		targetID := r.URL.Query().Get("id")
-
 		recipes, _ := api.FetchRecipes(baseURL)
 		dogs, _ := api.FetchDogs(baseURL)
 
@@ -54,12 +58,10 @@ func main() {
 				continue
 			}
 
-			// Fixed: Changed 'engine' to 'calculations'
 			dailyCals := calculations.CalculateDailyCalories(dog)
 			portions := make(map[string]float64)
 
 			for _, recipe := range recipes {
-				// Fixed: Changed 'engine' to 'calculations'
 				portions[recipe.Title] = calculations.CalculatePortionGrams(dailyCals, recipe)
 			}
 
