@@ -209,14 +209,14 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 func resolveS3URL(baseURL string, rawURL string) string {
 	var finalURL string
 	if len(rawURL) > 4 && rawURL[:4] == "http" {
-		finalURL = rawURL
+			finalURL = rawURL
 	} else {
-		finalURL = baseURL + rawURL
+			finalURL = baseURL + rawURL
 	}
-	if os.Getenv("IS_DDEV_PROJECT") == "true" {
-		if strings.Contains(finalURL, ".r2.dev/") && !strings.Contains(finalURL, "/s3fs-public/") {
+	
+	// Always ensure /s3fs-public/ is present if it's an R2 URL
+	if strings.Contains(finalURL, ".r2.dev/") && !strings.Contains(finalURL, "/s3fs-public/") {
 			finalURL = strings.Replace(finalURL, ".r2.dev/", ".r2.dev/s3fs-public/", 1)
-		}
 	}
 	return finalURL
 }
