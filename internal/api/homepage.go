@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -13,6 +14,11 @@ import (
 // FetchPageData grabs a specific landing page and flattens all nested paragraphs.
 // Uses Decoupled Router to resolve slugs to UUIDs for reliable fetching.
 func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error) {
+	// NOTE: field_sections.field_process_steps is intentionally omitted here.
+	// Drupal's JSON:API schema validates include paths against ALL paragraph types
+	// that field_sections can hold — not just the ones on this page. Since only
+	// paragraph--process_steps has field_process_steps, including it globally
+	// causes a 400. Child steps are fetched via a targeted secondary request instead.
 	includeParams := "field_sections,field_sections.field_feature_items,field_sections.field_media,field_sections.field_trust_items,field_sections.field_trust_items.field_icon,field_sections.field_teardown_image,field_sections.field_hotspot,field_sections.field_comp_items"
 
 	var url string
@@ -39,9 +45,17 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 		// Use Decoupled Router to find the UUID of the node at this path
 		routerURL := fmt.Sprintf("%s/router/translate-path?path=%s", baseURL, cleanSlug)
 		fmt.Printf("🌐 ROUTER: Resolving path: %s\n", routerURL)
-		
+
 		routerResp, err := http.Get(routerURL)
-		if err != nil || routerResp.StatusCode != 200 {
+		if err != nil {
+			fmt.Printf("❌ ROUTER ERROR: %v\n", err)
+			return models.HomepageResponse{Title: "Not Found", Sections: []models.Section{}}, nil
+		}
+		fmt.Printf("🌐 ROUTER STATUS: %d\n", routerResp.StatusCode)
+		if routerResp.StatusCode != 200 {
+			body, _ := io.ReadAll(routerResp.Body)
+			routerResp.Body.Close()
+			fmt.Printf("❌ ROUTER NON-200 BODY: %s\n", string(body))
 			return models.HomepageResponse{Title: "Not Found", Sections: []models.Section{}}, nil
 		}
 		defer routerResp.Body.Close()
@@ -52,15 +66,15 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 			} `json:"entity"`
 		}
 		if err := json.NewDecoder(routerResp.Body).Decode(&routerResult); err != nil || routerResult.Entity.UUID == "" {
+			fmt.Printf("❌ ROUTER: failed to decode or UUID empty (err=%v, uuid=%q)\n", err, routerResult.Entity.UUID)
 			return models.HomepageResponse{Title: "Not Found", Sections: []models.Section{}}, nil
 		}
+		fmt.Printf("✅ ROUTER: resolved UUID = %s\n", routerResult.Entity.UUID)
 
-		// Fetch content directly via the resolved UUID
 		url = fmt.Sprintf("%s/jsonapi/node/landing_page/%s?include=%s", baseURL, routerResult.Entity.UUID, includeParams)
 	}
 
-	// DEBUG LOG: Verify the final JSON:API request
-	fmt.Printf("🔍 DEBUG: Fetching from Drupal: %s\n", url)
+	fmt.Printf("🔍 Fetching from Drupal: %s\n", url)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -99,6 +113,7 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 
 	sectionLinks, ok := nodeRels["field_sections"].(map[string]interface{})["data"].([]interface{})
 	if !ok {
+		fmt.Printf("❌ field_sections not found or empty in relationships\n")
 		return models.HomepageResponse{Title: fmt.Sprint(nodeAttrs["title"])}, nil
 	}
 
@@ -200,6 +215,50 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 						}
 					}
 					attrs["field_comparison_items"] = nestedCompRows
+				}
+			}
+
+			// PROCESS STEPS
+			// Cannot be included via the global includeParams (Drupal validates field_process_steps
+			// against ALL paragraph types in field_sections and rejects it with a 400 because only
+			// paragraph--process_steps has that field). Instead, fetch the paragraph directly.
+			if sectionType == "paragraph--process_steps" {
+				stepsURL := fmt.Sprintf("%s/jsonapi/paragraph/process_steps/%s?include=field_process_steps", baseURL, id)
+				stepsResp, err := http.Get(stepsURL)
+				if err == nil && stepsResp.StatusCode == 200 {
+					var stepsRaw map[string]interface{}
+					if json.NewDecoder(stepsResp.Body).Decode(&stepsRaw) == nil {
+						// Build lookup from secondary included
+						stepsIncluded := make(map[string]map[string]interface{})
+						if inc, ok := stepsRaw["included"].([]interface{}); ok {
+							for _, item := range inc {
+								d := item.(map[string]interface{})
+								stepsIncluded[d["id"].(string)] = d
+							}
+						}
+						// Walk relationship links and flatten step attributes
+						if stepData, ok := stepsRaw["data"].(map[string]interface{}); ok {
+							if stepRels, ok := stepData["relationships"].(map[string]interface{}); ok {
+								if ref, ok := stepRels["field_process_steps"].(map[string]interface{}); ok && ref["data"] != nil {
+									if links, ok := ref["data"].([]interface{}); ok {
+										var steps []map[string]interface{}
+										for _, l := range links {
+											cid := l.(map[string]interface{})["id"].(string)
+											if child, ok := stepsIncluded[cid]; ok {
+												ca := child["attributes"].(map[string]interface{})
+												steps = append(steps, map[string]interface{}{
+													"field_headline":    ca["field_headline"],
+													"field_description": ca["field_description"],
+												})
+											}
+										}
+										attrs["field_process_steps"] = steps
+									}
+								}
+							}
+						}
+					}
+					stepsResp.Body.Close()
 				}
 			}
 
