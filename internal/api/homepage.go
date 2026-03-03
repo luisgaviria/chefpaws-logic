@@ -262,6 +262,10 @@ func FetchPageData(baseURL string, slug string) (models.HomepageResponse, error)
 				}
 			}
 
+			// CONTACT FORM — all fields (field_contact_heading, field_contact_subtext,
+			// field_submit_label, field_success_alert) are plain text with no relationship
+			// resolution needed. attrs passes through to the frontend unchanged.
+
 			// FINAL CTA
 			if sectionType == "paragraph--cta" {
 				if btnField, ok := attrs["field_cta_button"].(map[string]interface{}); ok {

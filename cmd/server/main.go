@@ -111,6 +111,7 @@ func main() {
 	// 5. Utility handlers
 	http.HandleFunc("/api/calculate", api.NutritionRevealHandler)
 	http.HandleFunc("/api/lead", api.NewLeadHandler(database, resendKey))
+	http.HandleFunc("/api/contact", api.NewContactHandler(resendKey))
 
 	fmt.Printf("🚀 ChefPaws Logic API live at http://localhost:%s\n", port)
 	fmt.Printf("🔗 Connecting to Drupal at: %s\n", baseURL)
